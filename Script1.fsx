@@ -1,5 +1,8 @@
 // Here's a script for playing around with maze generation algorithms
 
+#r "nuget: Unquote, 5.0.0"
+open Swensen.Unquote
+
 type CellCoords = CellCoords of int * int
 type GridCoords = GridCoords of int * int
 type Connection = Open | Closed
@@ -44,20 +47,20 @@ rounding down to a one-based array: 1, 2 x 1, 2.
 #######
 
 #######
-#.  2 #
-### ###
-# #   #
-##### #
-# #   #
+# # # #
+#######
+# # # #
+#######
+# # # #
 #######
 *)
 let join (sep: string) (input: string seq) = System.String.Join(sep, input)
 let renderMaze (maze:Maze) =
     let M = 1 + (maze.walls |> Array2D.length1) // number of rows in maze
     let N = 1 + (maze.walls |> Array2D.length2) // number of columns in maze
-    let horizontalWall m2 isOpen : string =
+    let horizontalWall m2 render : string =
         [for n2 in 1 .. N * 2 + 1 do
-            (if isOpen (m2, n2) then "      " else $"{(m2,n2)}")]
+            yield (render (m2, n2))]
         |> join ""
         // NE corner
     let isEntranceOrExit (maze: Maze) (m2, n2) =
@@ -65,29 +68,41 @@ let renderMaze (maze:Maze) =
             abs(a-b) <= 1
         let adjacentToCell (m2, n2) (CellCoords(x,y)) =
             (adjacent(2*x, n2)) && (adjacent(2*y, m2))
-        (maze.start |> adjacentToCell (m2, n2)) || (maze.finish |> adjacentToCell (m2, n2))
+        if (maze.start |> adjacentToCell (m2, n2)) || (maze.finish |> adjacentToCell (m2, n2))
+        then "_" else "E"
     let isConnection (m2, n2) =
         // n2 is the doubled grid coordinate (not maze coordinate). When odd, it's a connection (wall or tunnel). When even, it's a cell.
         match n2%2, m2%2 with
-        | 0, 0 -> true // it's an open cell
+        | 0, 0 -> "." // it's an open cell
         | 1, 0 | 0, 1 ->
             // the last row/column cannot have any connections onward
-            if m2 = 1 || n2 = 1 || m2 >= M * 2 || n2 >= N * 2 then isEntranceOrExit maze (m2, n2)
+            if m2 = 1 || n2 = 1 || m2 >= M * 2 || n2 >= N * 2 then
+                ((m2,n2), unquote <@ m2 = 1 || n2 = 1 || m2 >= M * 2 || n2 >= N * 2 @>) ||> printfn "%A"
+                m2.ToString()//isEntranceOrExit maze (m2, n2)
             else
                 // check whether the connection is open
-                maze.walls.[m2/2, n2/2] = Open
-        | 1, 1 | _ -> false // it's where walls meet
+                "C"
+                //maze.walls.[m2/2, n2/2] = Open
+        | 1, 1 | _ -> "#" // it's where walls meet
     [   for m2 in 1 .. M * 2 + 1 do
             horizontalWall m2 isConnection
         ]
     |> join "\n"
 
+let m = { walls = Array2D.createBased 1 1 2 2 Closed; start = CellCoords (3,3); finish = CellCoords(1, 1) }
+"\n" + renderMaze m
+
 // draw a maze to Console.Out
 let draw (maze:Maze) =
     printfn "%s" (renderMaze maze)
 
-let m = { walls = Array2D.createBased 1 1 2 2 Closed; start = CellCoords (3,3); finish = CellCoords(1, 1) }
-"\n" + renderMaze m
 let maze = m
-isConnection (1, 6)
+isConnection (1, 7)
 isEntranceOrExit maze (1, 6)
+
+let walls = [|
+    [|Closed; Open|]
+    [|Open; Closed|]
+    |]
+
+"\n" + renderMaze { walls = Array2D.initBased 1 1 (fun i j -> walls.[i].[j]); start = CellCoords (3,3); finish = CellCoords(1, 1) }
