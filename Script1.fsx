@@ -1,43 +1,53 @@
 // Here's a script for playing around with maze generation algorithms
 
 #r "nuget: Unquote, 5.0.0"
+#r "nuget: FsCheck"
 open Swensen.Unquote
+open FsCheck
 
 type CellCoords = CellCoords of int * int
-type GridCoords = GridCoords of int * int
+type ConnectionCoords = int
+type Direction = Up | Down | Left | Right
 type Connection = Open | Closed
 type Maze = {
+    N: int
+    M: int
     // for an N x M maze, there are (N-1)*(M-1) possible connections/walls between the cells
     // there's nothing interesting to say about a cell itself so we won't bother storing them
-    walls: Connection[,]
+    walls: Connection[]
     // technically we don't need a start and finish to have a valid maze,
     // but it might be fun to draw them
     start: CellCoords
     finish: CellCoords
     }
-
+let between a b x = a <= x && x <= b
+let M,N,m,n,dir = 3,4,2,4,Down
+let M,N,m,n,dir = 3,4,1,1,Down
+let M,N,m,n,dir = 3,4,2,1,Up
+let M,N,m,n,dir = 3,4,2,1,Down
+let M,N,m,n,dir = 3,4,2,4,Down
+let coordsOf M N (CellCoords (m,n), dir: Direction) : ConnectionCoords option =
+    if between 1 M m && between 1 N n then
+        match dir with
+        | Left when n > 1 ->
+            Some ((m-1) * (N-1) + n - 2)
+        | Right when n < N ->
+            Some ((m-1) * (N-1) + n - 1)
+        | Up when m > 1 ->
+            Some (M * (N-1) + (M-1) * (n-1) + m - 2)
+        | Down when m < M ->
+            Some (M * (N-1) + (M-1) * (n-1) + m - 1)
+        | _ ->
+            None
+    else
+        None
 let thunk x _ = x
-
-// get the wall coordinate connecting cells 1 and 2
-let coordOf (m1, n1) (m2, n2) =
-    if (abs(m1-m2) + abs(n1-n2)) > 1 then
-        failwithf $"There is no wall or tunnel between {(m1,n1)} and {(m2, n2)}"
-    // otherwise it's just the larger coordinate
-    else (max m1 m2, max n1 n2)
-
-coordOf (1, 1) (2,1)
-
+FsCheck.Check.Quick (fun (x: int, y: int) -> coordsOf 4 5 (CellCoords(x,y), Left) = coordsOf 4 5 (CellCoords(x,y-1), Right))
+FsCheck.Check.Quick (fun (x: int, y: int) -> coordsOf 4 5 (CellCoords(x,y), Up) = coordsOf 4 5 (CellCoords(x-1,y), Down))
+FsCheck.Check.Quick (fun (x: int, y: int) -> coordsOf 10 7 (CellCoords(x,y), Up) = coordsOf 10 7 (CellCoords(x-1,y), Down))
 let gridCoord (CellCoords(x,y)) =
     (2*y), (2*x)
 (*
-Think of a maze as a grid, where all the cells are even-numbered, and potential
-walls/tunnels have at least one odd number. The first row (1) and the last row
-are the exterior. We only store the possible tunnels/walls, so a maze with
-3x3 cells may have 5x5 grid coordinates (1..5), but only TWO rows/columns of
-possible tunnels between them. Another way to think of this is as if you're numbering
-the cells with whole numbers 1,2,3 and the connections between them with fractions
-1.5, 2.5. In any case, we only have to store the connections, so we do that by
-rounding down to a one-based array: 1, 2 x 1, 2.
 #######
 #   # #
 ### ###
@@ -56,40 +66,33 @@ rounding down to a one-based array: 1, 2 x 1, 2.
 *)
 let join (sep: string) (input: string seq) = System.String.Join(sep, input)
 let renderMaze (maze:Maze) =
-    let M = 1 + (maze.walls |> Array2D.length1) // number of rows in maze
-    let N = 1 + (maze.walls |> Array2D.length2) // number of columns in maze
-    let horizontalWall m2 render : string =
-        [for n2 in 1 .. N * 2 + 1 do
-            yield (render (m2, n2))]
-        |> join ""
-        // NE corner
-    let isEntranceOrExit (maze: Maze) (m2, n2) =
-        let adjacent (a,b)  =
-            abs(a-b) <= 1
-        let adjacentToCell (m2, n2) (CellCoords(x,y)) =
-            (adjacent(2*x, n2)) && (adjacent(2*y, m2))
-        if (maze.start |> adjacentToCell (m2, n2)) || (maze.finish |> adjacentToCell (m2, n2))
-        then "_" else "E"
-    let isConnection (m2, n2) =
-        // n2 is the doubled grid coordinate (not maze coordinate). When odd, it's a connection (wall or tunnel). When even, it's a cell.
-        match n2%2, m2%2 with
-        | 0, 0 -> "." // it's an open cell
-        | 1, 0 | 0, 1 ->
-            // the last row/column cannot have any connections onward
-            if m2 = 1 || n2 = 1 || m2 >= M * 2 || n2 >= N * 2 then
-                ((m2,n2), unquote <@ m2 = 1 || n2 = 1 || m2 >= M * 2 || n2 >= N * 2 @>) ||> printfn "%A"
-                m2.ToString()//isEntranceOrExit maze (m2, n2)
-            else
-                // check whether the connection is open
-                "C"
-                //maze.walls.[m2/2, n2/2] = Open
-        | 1, 1 | _ -> "#" // it's where walls meet
-    [   for m2 in 1 .. M * 2 + 1 do
-            horizontalWall m2 isConnection
-        ]
-    |> join "\n"
-
-let m = { walls = Array2D.createBased 1 1 2 2 Closed; start = CellCoords (3,3); finish = CellCoords(1, 1) }
+    let M = maze.M
+    let N = maze.N
+    let coords m n d = coordsOf M N (CellCoords(m,n), d)
+    [for m in 0..M do
+        if m >= 1 then
+            [for n in 0..N do
+                if n = 0 then "#"
+                elif between 1 M m then
+                    " "
+                    match coords m n Right with
+                    | Some v when maze.walls.[v] = Open -> " "
+                    | _ -> "#"
+                else "##"
+                ] |> join ""
+        [for n in 0..N do
+            if n = 0 then "#"
+            elif between 1 M m then
+                match coords m n Down with
+                | Some v when maze.walls.[v] = Open -> " "
+                | _ -> "#"
+                "#"
+            else "##"
+            ] |> join ""
+        ] |> join "\n"
+let m = { M = 3; N = 4; walls = Array.create 17 Closed; start = CellCoords (3,3); finish = CellCoords(1, 1) }
+let r = System.Random()
+let m = { M = 3; N = 4; walls = Array.init 17 (fun _ -> [Open;Closed].[r.Next 2]); start = CellCoords (3,3); finish = CellCoords(1, 1) }
 "\n" + renderMaze m
 
 // draw a maze to Console.Out
