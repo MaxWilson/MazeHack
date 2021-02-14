@@ -56,16 +56,20 @@ let renderMaze (maze:Maze) =
     let M = maze.M
     let N = maze.N
     let coords m n d = coordsOf M N (CellCoords(m,n), d)
+    let sidewall m n = "S"
+    let bottomWall m n = "B"
+    let topWall m n = "T"
     [for m in 0..M do
+        // horizontal passageways
         if m >= 1 then
             [for n in 0..N do
-                if n = 0 then "#"
+                if n = 0 then sidewall m n
                 elif between 1 M m then
                     " "
                     match coords m n Right with
                     | Some v when maze.walls.[v] = Open -> " "
                     | _ -> "#"
-                else "##"
+                else "#" + bottomWall m n
                 ] |> join ""
         [for n in 0..N do
             if n = 0 then "#"
@@ -73,8 +77,9 @@ let renderMaze (maze:Maze) =
                 match coords m n Down with
                 | Some v when maze.walls.[v] = Open -> " "
                 | _ -> "#"
-                "#"
-            else "##"
+                if n = N then sidewall m n
+                else "#"
+            else topWall m n + "#"
             ] |> join ""
         ] |> join "\n"
 
